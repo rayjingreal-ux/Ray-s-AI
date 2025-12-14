@@ -293,7 +293,7 @@ function App() {
                   }
                 </p>
               </div>
-            ) : appState === AppState.GENERATING ? (
+            ) : appState === AppState.GENERATING && renderHistory.length === 0 ? (
               <div className="flex-grow rounded-3xl bg-slate-800 border border-slate-700 flex flex-col items-center justify-center p-8 relative overflow-hidden">
                  {/* Fancy loading animation */}
                  <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-indigo-500/10 animate-pulse"></div>
