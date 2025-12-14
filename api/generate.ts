@@ -14,10 +14,11 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY_RAY;
+  // Use the standard API_KEY environment variable
+  const apiKey = process.env.API_KEY;
 
   if (!apiKey) {
-    return res.status(500).json({ error: 'Server configuration error: GEMINI_API_KEY_RAY is missing.' });
+    return res.status(500).json({ error: 'Server configuration error: API_KEY is missing. Please set API_KEY in your environment variables.' });
   }
 
   try {
