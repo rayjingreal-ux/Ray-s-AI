@@ -1,18 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 
 // Initialize the GoogleGenAI client freshly for each call.
-// This allows capturing the API Key if it is injected dynamically.
 const getAI = () => {
-  // 1. Try environment variable from IDX/AI Studio wrapper
-  let key = process.env.API_KEY;
-  
-  // 2. Try Vercel/Vite environment variable
-  if (!key) {
-    key = (import.meta as any).env?.VITE_API_KEY;
-  }
+  // The API key must be obtained exclusively from the environment variable process.env.API_KEY.
+  const key = process.env.API_KEY;
 
   if (!key) {
-    throw new Error("API Key 尚未設定。請確認環境變數 VITE_API_KEY 已設定，或重新連結 Google AI 帳號。");
+    throw new Error("API Key 尚未設定。請連結 Google AI 帳號或確認環境變數。");
   }
   return new GoogleGenAI({ apiKey: key });
 };
@@ -70,8 +64,8 @@ export const generateRenderedImage = async (
 ): Promise<string[]> => {
   try {
     const ai = getAI();
-    let finalPrompt = '';
     const parts: any[] = [];
+    let finalPrompt = '';
 
     // --- Logic: Upscale vs In-painting vs Standard ---
     if (resolution === '4K' && !maskBase64) {
@@ -162,7 +156,6 @@ export const generateRenderedImage = async (
             }
         });
     } catch (e: any) {
-        // Fallback Logic
         console.warn("Gemini 3 Pro Image failed, trying fallback to Flash...", e.message);
         if (maskBase64) throw e; 
         
@@ -196,5 +189,3 @@ export const generateRenderedImage = async (
     throw error;
   }
 };
-
-export const setManualApiKey = (_key: string) => {};

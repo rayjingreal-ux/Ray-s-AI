@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Header } from './components/Header';
 import { UploadArea } from './components/UploadArea';
 import { PromptEditor } from './components/PromptEditor';
@@ -28,20 +28,23 @@ function App() {
   useEffect(() => {
     const checkKey = async () => {
       try {
+        // Priority 1: IDX Window AIStudio
         if (window.aistudio && window.aistudio.hasSelectedApiKey) {
-          // Environment supports Key Selection (e.g., IDX)
           const hasKey = await window.aistudio.hasSelectedApiKey();
           setHasApiKey(hasKey);
         } else {
-          // Environment does not support Key Selection (e.g., Vercel)
-          // We assume the user has set the VITE_API_KEY environment variable.
-          // We let the app load; actual validation happens when making the API call.
-          setHasApiKey(true); 
+          // Priority 2: Process Env (Vercel API_KEY injected via Vite)
+          const envKey = process.env.API_KEY;
+          
+          if (envKey) {
+             setHasApiKey(true);
+          } else {
+             setHasApiKey(false);
+          }
         }
       } catch (e) {
         console.error("Failed to check API key", e);
-        // Fallback to allow loading
-        setHasApiKey(true);
+        setHasApiKey(false);
       } finally {
         setIsCheckingKey(false);
       }
@@ -53,12 +56,10 @@ function App() {
     try {
       if (window.aistudio && window.aistudio.openSelectKey) {
         await window.aistudio.openSelectKey();
-        // Assume success immediately after trigger to avoid race condition
         setHasApiKey(true);
-        // Clear any previous errors
         setErrorMsg(null);
       } else {
-        alert("此環境不支援 API Key 選擇器。請確認您已設定 VITE_API_KEY 環境變數。");
+        alert("此環境不支援自動 API Key 選擇。");
       }
     } catch (e) {
       console.error("Key selection failed", e);
@@ -88,15 +89,10 @@ function App() {
     } catch (err: any) {
       console.error(err);
       
-      // Handle the specific "Requested entity was not found" error (Key not selected)
-      if (err.message && err.message.includes("Requested entity was not found")) {
-        // Only trigger UI gatekeeper if we are in an environment that supports it
-        if (window.aistudio) {
-          setHasApiKey(false);
-          setErrorMsg("API Key 驗證失效，請重新連結。");
-        } else {
-          setErrorMsg("API Key 無效或未設定。請檢查環境變數。");
-        }
+      // Handle "Requested entity was not found" or Auth errors
+      if (err.message && (err.message.includes("Requested entity was not found") || err.message.includes("API Key"))) {
+         setHasApiKey(false);
+         setErrorMsg("API Key 驗證失效，請重新輸入或連結。");
       } else {
         setErrorMsg(err.message || "分析圖片失敗，請重試。");
       }
@@ -157,13 +153,9 @@ function App() {
       setAppState(AppState.COMPLETE);
     } catch (err: any) {
       console.error(err);
-      if (err.message && err.message.includes("Requested entity was not found")) {
-         if (window.aistudio) {
-          setHasApiKey(false);
-          setErrorMsg("API Key 驗證失效，請重新連結。");
-        } else {
-          setErrorMsg("API Key 無效或未設定。請檢查環境變數。");
-        }
+      if (err.message && (err.message.includes("Requested entity was not found") || err.message.includes("API Key"))) {
+        setHasApiKey(false);
+        setErrorMsg("API Key 驗證失效，請重新輸入或連結。");
       } else {
         setErrorMsg(err.message || "生成渲染圖失敗。模型可能繁忙或請求無效。");
       }
@@ -208,8 +200,12 @@ function App() {
 
   if (!hasApiKey) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
-        <div className="max-w-md w-full bg-slate-800 rounded-2xl border border-slate-700 p-8 shadow-2xl text-center">
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+        {/* Decorative Background */}
+        <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/20 to-slate-900 z-0"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none"></div>
+
+        <div className="max-w-md w-full bg-slate-800/80 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-8 shadow-2xl text-center relative z-10">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 mx-auto mb-6">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-8 h-8 text-white">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
@@ -218,21 +214,29 @@ function App() {
           <h1 className="text-2xl font-bold text-white mb-2">Ray's DesignLens AI</h1>
           <p className="text-slate-400 mb-8 text-sm leading-relaxed">
             本應用程式使用 Gemini 3 Pro 高階影像模型。<br/>
-            請連結您的 Google AI 帳號以繼續使用。
+            請設定 API Key 以開始使用。
           </p>
           
-          <button 
-            onClick={handleConnectApiKey}
-            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold shadow-lg shadow-indigo-500/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-              <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 9a.75.75 0 00-1.5 0v2.25H9a.75.75 0 000 1.5h2.25V15a.75.75 0 001.5 0v-2.25H15a.75.75 0 000-1.5h-2.25V9z" clipRule="evenodd" />
-            </svg>
-            連結 API Key
-          </button>
-          
+          {/* Conditional Input based on Environment */}
+          {window.aistudio ? (
+            <button 
+                onClick={handleConnectApiKey}
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold shadow-lg shadow-indigo-500/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 9a.75.75 0 00-1.5 0v2.25H9a.75.75 0 000 1.5h2.25V15a.75.75 0 001.5 0v-2.25H15a.75.75 0 000-1.5h-2.25V9z" clipRule="evenodd" />
+                </svg>
+                連結 Google AI 帳號
+            </button>
+          ) : (
+             <div className="text-center p-4 bg-slate-700/50 rounded-xl">
+                <p className="text-white font-medium">未偵測到 API Key</p>
+                <p className="text-slate-400 text-sm mt-1">請確保環境變數 <code>API_KEY</code> 已正確設定。</p>
+             </div>
+          )}
+
           <p className="mt-6 text-xs text-slate-500">
-            需要協助？查看 <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">計費與 API 說明</a>
+            沒有 API Key? <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">在此免費獲取</a>
           </p>
         </div>
       </div>
