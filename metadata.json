@@ -1,7 +1,5 @@
 {
   "name": "Ray's DesignLens AI",
   "description": "專業室內設計視覺化工具。上傳草圖或照片，分析風格，並生成照片級真實渲染圖。",
-  "requestFramePermissions": [
-    "camera"
-  ]
+  "requestFramePermissions": []
 }
