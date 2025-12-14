@@ -171,13 +171,6 @@ function App() {
   // Deprecated at App level, handled inside ResultDisplay now
   const handleDownload = () => {};
 
-  const handleResetKey = () => {
-    if (window.confirm('確定要清除儲存的 API Key 並重新整理嗎？')) {
-      localStorage.removeItem('gemini_api_key');
-      window.location.reload();
-    }
-  };
-
   return (
     <div className="min-h-screen flex flex-col bg-slate-900 text-slate-200 font-sans selection:bg-indigo-500/30">
       <Header />
@@ -326,12 +319,6 @@ function App() {
       {/* Footer */}
       <footer className="w-full py-6 text-center text-xs text-slate-600 border-t border-slate-800/50 flex flex-col items-center gap-2">
          <p>© {new Date().getFullYear()} Ray's DesignLens AI. 由 Google Gemini 3 Pro 驅動。</p>
-         <button 
-            onClick={handleResetKey}
-            className="text-slate-700 hover:text-indigo-400 transition-colors"
-         >
-           更換 API Key
-         </button>
       </footer>
     </div>
   );
