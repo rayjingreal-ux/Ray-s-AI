@@ -6,7 +6,6 @@ import { getCostMessage } from '../services/pricingService';
 interface ResultDisplayProps {
   originalImage: string;
   history: RenderHistoryItem[]; 
-  onDownload: () => void;
   onClose: () => void;
   onRefine: (refineText: string, maskBase64?: string, sourceOverride?: string) => void;
   onUpscale: (base64Image: string) => void; 
@@ -16,7 +15,6 @@ interface ResultDisplayProps {
 export const ResultDisplay: React.FC<ResultDisplayProps> = ({ 
   originalImage, 
   history,
-  onDownload, 
   onClose,
   onRefine,
   onUpscale,

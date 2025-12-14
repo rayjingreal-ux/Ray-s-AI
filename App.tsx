@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { Header } from './components/Header';
 import { UploadArea } from './components/UploadArea';
 import { PromptEditor } from './components/PromptEditor';
@@ -168,9 +168,6 @@ function App() {
     setErrorMsg(null);
   };
 
-  // Deprecated at App level, handled inside ResultDisplay now
-  const handleDownload = () => {};
-
   return (
     <div className="min-h-screen flex flex-col bg-slate-900 text-slate-200 font-sans selection:bg-indigo-500/30">
       <Header />
@@ -305,7 +302,6 @@ function App() {
               <ResultDisplay 
                 originalImage={sourceImage.preview}
                 history={renderHistory}
-                onDownload={handleDownload}
                 onClose={handleReset}
                 onRefine={handleRefine}
                 onUpscale={handleUpscale}

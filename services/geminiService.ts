@@ -82,4 +82,4 @@ export const generateRenderedImage = async (
 };
 
 // Deprecated functions kept empty for compatibility if imported elsewhere
-export const setManualApiKey = (key: string) => {};
+export const setManualApiKey = (_key: string) => {};
