@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Header } from './components/Header';
 import { UploadArea } from './components/UploadArea';
 import { PromptEditor } from './components/PromptEditor';
@@ -9,28 +9,71 @@ import { analyzeInteriorImage, generateRenderedImage } from './services/geminiSe
 import { AppState, ImageFile, RenderHistoryItem } from './types';
 
 function App() {
-  // State
+  // --- API Key Gatekeeper State ---
+  const [hasApiKey, setHasApiKey] = useState<boolean>(false);
+  const [isCheckingKey, setIsCheckingKey] = useState<boolean>(true);
+
+  // --- App Logic State ---
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
   const [sourceImage, setSourceImage] = useState<ImageFile | null>(null);
   const [analysisPrompt, setAnalysisPrompt] = useState<string>("");
-  
-  // History State instead of simple string array
   const [renderHistory, setRenderHistory] = useState<RenderHistoryItem[]>([]);
-  
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Masking State
   const [isMaskingMode, setIsMaskingMode] = useState(false);
   const maskEditorRef = useRef<MaskEditorHandle>(null);
 
-  // Handlers
+  // 1. Check for API Key on Mount
+  useEffect(() => {
+    const checkKey = async () => {
+      try {
+        if (window.aistudio && window.aistudio.hasSelectedApiKey) {
+          // Environment supports Key Selection (e.g., IDX)
+          const hasKey = await window.aistudio.hasSelectedApiKey();
+          setHasApiKey(hasKey);
+        } else {
+          // Environment does not support Key Selection (e.g., Vercel)
+          // We assume the user has set the VITE_API_KEY environment variable.
+          // We let the app load; actual validation happens when making the API call.
+          setHasApiKey(true); 
+        }
+      } catch (e) {
+        console.error("Failed to check API key", e);
+        // Fallback to allow loading
+        setHasApiKey(true);
+      } finally {
+        setIsCheckingKey(false);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleConnectApiKey = async () => {
+    try {
+      if (window.aistudio && window.aistudio.openSelectKey) {
+        await window.aistudio.openSelectKey();
+        // Assume success immediately after trigger to avoid race condition
+        setHasApiKey(true);
+        // Clear any previous errors
+        setErrorMsg(null);
+      } else {
+        alert("此環境不支援 API Key 選擇器。請確認您已設定 VITE_API_KEY 環境變數。");
+      }
+    } catch (e) {
+      console.error("Key selection failed", e);
+      alert("無法連結 API Key，請重試。");
+    }
+  };
+
+  // --- Handlers ---
+
   const handleImageSelected = async (image: ImageFile) => {
     setSourceImage(image);
     setErrorMsg(null);
-    setRenderHistory([]); // Clear history for new source image
-    setAnalysisPrompt(""); // Clear previous prompts
-    setIsMaskingMode(false); // Reset mask mode
-    // Update: Stop at IMAGE_LOADED instead of auto-analyzing
+    setRenderHistory([]);
+    setAnalysisPrompt("");
+    setIsMaskingMode(false);
     setAppState(AppState.IMAGE_LOADED);
   };
 
@@ -44,30 +87,31 @@ function App() {
       setAppState(AppState.READY_TO_GENERATE);
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.message || "分析圖片失敗，請重試。");
+      
+      // Handle the specific "Requested entity was not found" error (Key not selected)
+      if (err.message && err.message.includes("Requested entity was not found")) {
+        // Only trigger UI gatekeeper if we are in an environment that supports it
+        if (window.aistudio) {
+          setHasApiKey(false);
+          setErrorMsg("API Key 驗證失效，請重新連結。");
+        } else {
+          setErrorMsg("API Key 無效或未設定。請檢查環境變數。");
+        }
+      } else {
+        setErrorMsg(err.message || "分析圖片失敗，請重試。");
+      }
       setAppState(AppState.ERROR);
     }
   };
 
   const handlePartialEdit = () => {
     if (!sourceImage) return;
-    
-    // Enable Masking Mode
     setIsMaskingMode(true);
-
-    // Skip analysis, prepopulate with a template for partial editing
     const templatePrompt = "修改目標：\n(請在此描述您想對紅色遮罩區域進行的修改，例如：換成米色亞麻沙發...)";
     setAnalysisPrompt(templatePrompt);
     setAppState(AppState.READY_TO_GENERATE);
   };
 
-  /**
-   * Performs generation.
-   * @param promptToUse The text prompt.
-   * @param resolution '2K' | '4K'. Defaults to 2K for initial pass.
-   * @param overrideSourceBase64 Optional. If provided (e.g., for upscaling or refining a result), uses this image as source.
-   * @param overrideMaskBase64 Optional. Specific mask for this generation (overrides global mask editor state).
-   */
   const performGeneration = async (
     promptToUse: string, 
     resolution: '2K' | '4K' = '2K', 
@@ -80,28 +124,19 @@ function App() {
     setErrorMsg(null);
 
     const base64Input = overrideSourceBase64 || sourceImage?.base64;
-    // If using override (the generated PNG), mimeType is png. Else use original.
     const mimeInput = overrideSourceBase64 ? 'image/png' : sourceImage?.mimeType || 'image/jpeg';
 
     if (!base64Input) return;
 
-    // Determine Mask
     let maskBase64: string | undefined = undefined;
-
-    // 1. Check if an explicit mask was passed (e.g. from ResultDisplay in-painting)
     if (overrideMaskBase64) {
       maskBase64 = overrideMaskBase64;
-    } 
-    // 2. Otherwise check if global masking mode is active on the source image
-    else if (isMaskingMode && !overrideSourceBase64) {
+    } else if (isMaskingMode && !overrideSourceBase64) {
       const mask = maskEditorRef.current?.getMaskBase64();
-      if (mask) {
-        maskBase64 = mask;
-      }
+      if (mask) maskBase64 = mask;
     }
 
     try {
-      // Step 2: Generate Render
       const results = await generateRenderedImage(
         base64Input, 
         mimeInput, 
@@ -110,7 +145,6 @@ function App() {
         maskBase64
       );
       
-      // Create new history item
       const newItem: RenderHistoryItem = {
         id: Date.now().toString(),
         imageUrl: results[0],
@@ -123,39 +157,38 @@ function App() {
       setAppState(AppState.COMPLETE);
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.message || "生成渲染圖失敗。模型可能繁忙或請求無效。");
-      setAppState(AppState.READY_TO_GENERATE); // Allow retry
+      if (err.message && err.message.includes("Requested entity was not found")) {
+         if (window.aistudio) {
+          setHasApiKey(false);
+          setErrorMsg("API Key 驗證失效，請重新連結。");
+        } else {
+          setErrorMsg("API Key 無效或未設定。請檢查環境變數。");
+        }
+      } else {
+        setErrorMsg(err.message || "生成渲染圖失敗。模型可能繁忙或請求無效。");
+      }
+      setAppState(AppState.READY_TO_GENERATE);
     }
   };
 
   const handleGenerate = () => {
     if (analysisPrompt) {
-      // Default to 2K for speed and preview
       performGeneration(analysisPrompt, '2K');
     }
   };
 
   const handleRefine = (refineText: string, maskBase64?: string, sourceOverride?: string) => {
-    // Append the new instruction to the existing prompt if it's a general refine, 
-    // or use it as the specific instruction if masking.
-    
     let newPrompt = "";
     if (maskBase64) {
-       // For masking/in-painting, the refine text is usually specific to the masked area
        newPrompt = `針對遮罩區域修改：${refineText}\n\n(保持其他區域不變)`;
     } else {
        newPrompt = `${analysisPrompt}\n\n修改要求: ${refineText}`;
-       setAnalysisPrompt(newPrompt); // Update text area only for global refine
+       setAnalysisPrompt(newPrompt);
     }
-    
-    // Perform generation
-    // If sourceOverride is present (modifying a result), use it.
-    // If maskBase64 is present, use it.
     performGeneration(newPrompt, '2K', sourceOverride, maskBase64);
   };
 
   const handleUpscale = (targetImageBase64: string) => {
-    // Upscale the specific image passed from ResultDisplay
     performGeneration(analysisPrompt, '4K', targetImageBase64);
   };
 
@@ -168,6 +201,45 @@ function App() {
     setErrorMsg(null);
   };
 
+  // --- Render: Key Gatekeeper ---
+  if (isCheckingKey) {
+    return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-400">載入中...</div>;
+  }
+
+  if (!hasApiKey) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full bg-slate-800 rounded-2xl border border-slate-700 p-8 shadow-2xl text-center">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 mx-auto mb-6">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-8 h-8 text-white">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-2">Ray's DesignLens AI</h1>
+          <p className="text-slate-400 mb-8 text-sm leading-relaxed">
+            本應用程式使用 Gemini 3 Pro 高階影像模型。<br/>
+            請連結您的 Google AI 帳號以繼續使用。
+          </p>
+          
+          <button 
+            onClick={handleConnectApiKey}
+            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold shadow-lg shadow-indigo-500/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 9a.75.75 0 00-1.5 0v2.25H9a.75.75 0 000 1.5h2.25V15a.75.75 0 001.5 0v-2.25H15a.75.75 0 000-1.5h-2.25V9z" clipRule="evenodd" />
+            </svg>
+            連結 API Key
+          </button>
+          
+          <p className="mt-6 text-xs text-slate-500">
+            需要協助？查看 <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">計費與 API 說明</a>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Render: Main App ---
   return (
     <div className="min-h-screen flex flex-col bg-slate-900 text-slate-200 font-sans selection:bg-indigo-500/30">
       <Header />
@@ -242,7 +314,7 @@ function App() {
               )}
             </div>
 
-            {/* Step 2: Action Choice (New) */}
+            {/* Step 2: Action Choice */}
             {sourceImage && appState === AppState.IMAGE_LOADED && (
               <ActionSelector 
                 onAnalyze={handleStartAnalysis} 
@@ -285,7 +357,6 @@ function App() {
               </div>
             ) : appState === AppState.GENERATING && renderHistory.length === 0 ? (
               <div className="flex-grow rounded-3xl bg-slate-800 border border-slate-700 flex flex-col items-center justify-center p-8 relative overflow-hidden">
-                 {/* Fancy loading animation */}
                  <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-indigo-500/10 animate-pulse"></div>
                  <div className="relative z-10 text-center">
                     <div className="inline-block relative">
